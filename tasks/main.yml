@@ -8,6 +8,24 @@
     nginx_user: "{{ __nginx_user }}"
   when: nginx_user is not defined
 
+- name: create acme challenge directory
+  file:
+    path: '{{ nginx_well_known_acme_challenge }}'
+    state: directory
+
+- name: create acme challenge directory
+  file:
+    path: /srv/www/letsencrypt/.well-known/acme-challenge
+    owner: "{{ __nginx_user }}"
+    group: "{{ __nginx_user }}"
+    mode: 0755
+    state: directory
+
+- name: remove default site
+  file:
+    name: /etc/nginx/sites-enabled/default
+    state: absent
+
 # Setup/install tasks.
 - include_tasks: setup-RedHat.yml
   when: ansible_os_family == 'RedHat'
@@ -40,6 +58,17 @@
     mode: 0644
   notify:
     - reload nginx
+
+- name: copy static nginx modules.d
+  copy:
+    src: modules.d/
+    dest: /etc/nginx/modules.d/
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - reload nginx
+  tags: nginx
 
 - name: Ensure nginx service is running as configured.
   service:
