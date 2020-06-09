@@ -1,9 +1,13 @@
 ---
+
+- name: re-gather facts
+  action: setup
+
 - name: Remove default nginx vhost config file (if configured).
   file:
     path: "{{ nginx_default_vhost_path }}"
     state: absent
-  when: nginx_remove_default_vhost | bool
+  when: nginx_remove_default_vhost
   notify: restart nginx
 
 - name: Ensure nginx_vhost_path exists.
@@ -11,7 +15,6 @@
     path: "{{ nginx_vhost_path }}"
     state: directory
   notify: reload nginx
-
 
 - name: ensure vhosts root path exists
   file:
@@ -33,20 +36,66 @@
   with_items:
     "{{ nginx_vhosts }}"
 
-
-- name: Add managed vhost config files.
+- name: add managed http vhost config files.
   template:
     src: "{{ item.template|default(nginx_vhost_template) }}"
     dest: "{{ nginx_vhost_path }}/{{ item.filename|default(item.server_name.split(' ')[0] ~ '.conf') }}"
     force: true
     owner: root
-    group: "{{ root_group }}"
+    group: root
     mode: 0644
-  when: item.state|default('present') != 'absent'
-  with_items: "{{ nginx_vhosts }}"
+  when: (
+    item.state | default('present') != 'absent' and
+    item.listen is search('80') )
+  with_items:
+    "{{ nginx_vhosts }}"
   notify: reload nginx
-  tags:
-    - skip_ansible_lint
+
+- block:
+  - name: Checking existing domains certificates
+    stat:
+      path: '{{ item }}'
+      get_checksum: false
+      get_md5: false
+      get_mime: false
+      get_attributes: false
+    with_items:
+      "{{ nginx_domain_certificates }}"
+    when: nginx_domain_certificates is defined and nginx_domain_certificates != []
+    register: check_domain_cert
+
+#  - debug:
+#      var: "{{item}}"
+#    when: (
+#      item[0].ssl_certificate_key is defined and (
+#        item[1].stat.path is defined and
+#        item[1].stat.path == item[0].ssl_certificate_key) )
+#    with_nested:
+#      - "{{ nginx_vhosts }}"
+#      - "{{ check_domain_cert.results }}"
+
+  # https://stackoverflow.com/questions/36629599/stat-exists-with-list-of-variables-in-ansible
+  # https://docs.ansible.com/ansible/2.3/playbooks_loops.html#nested-loops
+  - name: add managed https vhost config files.
+    template:
+      src: "{{ item[0].template | default( nginx_vhost_template ) }}"
+      dest: "{{ nginx_vhost_path }}/{{ item[0].filename | default(item[0].server_name.split(' ')[0] ~ '.conf') }}"
+      force: true
+      owner: root
+      group: root
+      mode: 0644
+    when: (
+      item[0].state | default('present') != 'absent' and (
+        item[0].listen is search('443') or
+        item[0].listen is search('ssl') or
+        item[0].listen is search('http2') ) and
+      item[0].ssl_certificate_key is defined and (
+        item[1].stat.path is defined and
+        item[1].stat.path == item[0].ssl_certificate_key) )
+    with_nested:
+      - "{{ nginx_vhosts }}"
+      - "{{ check_domain_cert.results }}"
+    notify: reload nginx
 
 - name: Remove managed vhost config files.
   file:
@@ -55,8 +104,6 @@
   when: item.state|default('present') == 'absent'
   with_items: "{{ nginx_vhosts }}"
   notify: reload nginx
-  tags:
-    - skip_ansible_lint
 
 - name: Remove legacy vhosts.conf file.
   file:
