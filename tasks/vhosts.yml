@@ -12,6 +12,28 @@
     state: directory
   notify: reload nginx
 
+
+- name: ensure vhosts root path exists
+  file:
+    path: "{{ item.root | default('/var/www') }}"
+    state: directory
+    owner: "{{ __nginx_user }}"
+  when:
+    item.state | default('present') != 'absent'
+  with_items:
+    "{{ nginx_vhosts }}"
+
+- name: ensure vhosts log path exists
+  file:
+    path: "{{ item.access_log | dirname | default('/var/log/nginx') }}"
+    state: directory
+  when: (
+    item.state | default('present') != 'absent' and
+    item.access_log is defined)
+  with_items:
+    "{{ nginx_vhosts }}"
+
+
 - name: Add managed vhost config files.
   template:
     src: "{{ item.template|default(nginx_vhost_template) }}"

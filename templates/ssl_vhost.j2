@@ -1,0 +1,64 @@
+#
+
+{% block server_redirect %}
+{% if item[0].server_name_ssl_redirect is defined %}
+server {
+  listen       80;
+  server_name  {{ item[0].server_name }};
+  return       301 https://{{ item[0].server_name_ssl_redirect }}$request_uri;
+}
+{% endif %}
+{% if item[0].server_name_redirect is defined %}
+server {
+  listen       {{ item[0].listen | default('80') }};
+  server_name  {{ item[0].server_name.split(' ')[0] }};
+  include modules.d/10-ssl.conf;
+  {% if item[0].ssl_certificate is defined and item[0].ssl_certificate_key is defined -%}
+  ssl_certificate     {{item[0].ssl_certificate}};
+  ssl_certificate_key {{item[0].ssl_certificate_key}};
+  {% endif -%}
+  return       301 $scheme://{{ item[0].server_name_redirect }}$request_uri;
+}
+{% endif %}
+{% endblock %}
+
+server {
+  {% block server_begin %}{% endblock %}
+{% block server_basic -%}
+  listen {{ item[0].listen | default('80') }};
+  {% if item[0].server_name is defined -%}
+  server_name {{ item[0].server_name }};
+  {% endif -%}
+  {% if item[0].auth_basic is defined and item[0].auth_basic_user_file is defined -%}
+  auth_basic           "{{item[0].auth_basic}}";
+  auth_basic_user_file {{item[0].auth_basic_user_file}};
+  {% endif -%}
+  {% if item[0].root is defined -%}
+  root {{ item[0].root }};
+  {% endif -%}
+  index {{ item[0].index | default('index.html index.htm') }};
+  {% if item[0].error_page is defined -%}
+  error_page {{ item[0].error_page }};
+  {% endif -%}
+  {% if item[0].access_log is defined -%}
+  access_log {{ item[0].access_log }};
+  {% endif -%}
+  {% if item[0].error_log is defined -%}
+  error_log {{ item[0].error_log }} error;
+  {% endif -%}
+  {% if item[0].ssl_certificate is defined and item[0].ssl_certificate_key is defined -%}
+  ssl_certificate     {{item[0].ssl_certificate}};
+  ssl_certificate_key {{item[0].ssl_certificate_key}};
+  {% endif -%}
+
+  {% if item[0].return is defined -%}
+  return {{ item[0].return }};
+  {% endif -%}
+{% endblock -%}
+  {% block server_end %}{% endblock -%}
+
+  {% if item[0].extra_parameters is defined -%}
+  {{ item[0].extra_parameters|indent(2) }}
+  {% endif %}
+
+}
